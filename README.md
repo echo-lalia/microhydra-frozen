@@ -1,3 +1,16 @@
+# MicroHydra - frozen
+
+This is a fork from the official MicroPython github, meant to be specifically used for compiling MicroHydra into a firmware for the Cardputer. 
+
+The main MicroHydra repository is over [here](https://github.com/echo-lalia/Cardputer-MicroHydra).
+
+
+<br /><br /><br />
+
+
+
+------------
+
 [![Unix CI badge](https://github.com/micropython/micropython/actions/workflows/ports_unix.yml/badge.svg)](https://github.com/micropython/micropython/actions?query=branch%3Amaster+event%3Apush) [![STM32 CI badge](https://github.com/micropython/micropython/actions/workflows/ports_stm32.yml/badge.svg)](https://github.com/micropython/micropython/actions?query=branch%3Amaster+event%3Apush) [![Docs CI badge](https://github.com/micropython/micropython/actions/workflows/docs.yml/badge.svg)](https://docs.micropython.org/) [![codecov](https://codecov.io/gh/micropython/micropython/branch/master/graph/badge.svg?token=I92PfD05sD)](https://codecov.io/gh/micropython/micropython)
 
 The MicroPython project
