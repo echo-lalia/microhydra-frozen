@@ -59,7 +59,7 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 
 # Code to allow a target MicroPython to import an .mpy from RAM
 injected_import_hook_code = """\
-import sys, os, io
+import sys, os, io, vfs
 class __File(io.IOBase):
   def __init__(self):
     self.off = 0
@@ -83,7 +83,7 @@ class __FS:
       raise OSError(-2) # ENOENT
   def open(self, path, mode):
     return __File()
-os.mount(__FS(), '/__vfstest')
+vfs.mount(__FS(), '/__vfstest')
 os.chdir('/__vfstest')
 __import__('__injected_test')
 """
@@ -643,9 +643,7 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
     # Some tests are known to fail with native emitter
     # Remove them from the below when they work
     if args.emit == "native":
-        skip_tests.update(
-            {"basics/%s.py" % t for t in "gen_yield_from_close generator_name".split()}
-        )  # require raise_varargs, generator name
+        skip_tests.add("basics/gen_yield_from_close.py")  # require raise_varargs
         skip_tests.update(
             {"basics/async_%s.py" % t for t in "with with2 with_break with_return".split()}
         )  # require async_with
@@ -656,7 +654,6 @@ def run_tests(pyb, tests, args, result_dir, num_threads=1):
         skip_tests.add("basics/del_deref.py")  # requires checking for unbound local
         skip_tests.add("basics/del_local.py")  # requires checking for unbound local
         skip_tests.add("basics/exception_chain.py")  # raise from is not supported
-        skip_tests.add("basics/fun_name.py")  # requires proper names for native functions
         skip_tests.add("basics/scope_implicit.py")  # requires checking for unbound local
         skip_tests.add("basics/sys_tracebacklimit.py")  # requires traceback info
         skip_tests.add("basics/try_finally_return2.py")  # requires raise_varargs
