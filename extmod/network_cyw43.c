@@ -321,6 +321,12 @@ static mp_obj_t network_cyw43_ifconfig(size_t n_args, const mp_obj_t *args) {
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(network_cyw43_ifconfig_obj, 1, 2, network_cyw43_ifconfig);
 
+static mp_obj_t network_cyw43_ipconfig(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+    network_cyw43_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+    return mod_network_nic_ipconfig(&self->cyw->netif[self->itf], n_args - 1, args + 1, kwargs);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(network_cyw43_ipconfig_obj, 1, network_cyw43_ipconfig);
+
 static mp_obj_t network_cyw43_status(size_t n_args, const mp_obj_t *args) {
     network_cyw43_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     (void)self;
@@ -532,10 +538,16 @@ static const mp_rom_map_elem_t network_cyw43_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_disconnect), MP_ROM_PTR(&network_cyw43_disconnect_obj) },
     { MP_ROM_QSTR(MP_QSTR_isconnected), MP_ROM_PTR(&network_cyw43_isconnected_obj) },
     { MP_ROM_QSTR(MP_QSTR_ifconfig), MP_ROM_PTR(&network_cyw43_ifconfig_obj) },
+    { MP_ROM_QSTR(MP_QSTR_ipconfig), MP_ROM_PTR(&network_cyw43_ipconfig_obj) },
     { MP_ROM_QSTR(MP_QSTR_status), MP_ROM_PTR(&network_cyw43_status_obj) },
     { MP_ROM_QSTR(MP_QSTR_config), MP_ROM_PTR(&network_cyw43_config_obj) },
 
     // Class constants.
+    { MP_ROM_QSTR(MP_QSTR_IF_STA), MP_ROM_INT(MOD_NETWORK_STA_IF) },
+    { MP_ROM_QSTR(MP_QSTR_IF_AP), MP_ROM_INT(MOD_NETWORK_AP_IF) },
+    { MP_ROM_QSTR(MP_QSTR_SEC_OPEN), MP_ROM_INT(CYW43_AUTH_OPEN) },
+    { MP_ROM_QSTR(MP_QSTR_SEC_WPA_WPA2), MP_ROM_INT(CYW43_AUTH_WPA2_MIXED_PSK) },
+
     { MP_ROM_QSTR(MP_QSTR_PM_NONE), MP_ROM_INT(PM_NONE) },
     { MP_ROM_QSTR(MP_QSTR_PM_PERFORMANCE), MP_ROM_INT(PM_PERFORMANCE) },
     { MP_ROM_QSTR(MP_QSTR_PM_POWERSAVE), MP_ROM_INT(PM_POWERSAVE) },

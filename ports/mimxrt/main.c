@@ -87,6 +87,7 @@ int main(void) {
         memcpy(&buf[0], "PYBD", 4);
         mp_hal_get_mac_ascii(MP_HAL_MAC_WLAN0, 8, 4, (char *)&buf[4]);
         cyw43_wifi_ap_set_ssid(&cyw43_state, 8, buf);
+        cyw43_wifi_ap_set_auth(&cyw43_state, CYW43_AUTH_WPA2_MIXED_PSK);
         cyw43_wifi_ap_set_password(&cyw43_state, 8, (const uint8_t *)"pybd0123");
     }
     #endif
@@ -115,7 +116,9 @@ int main(void) {
         // Execute user scripts.
         int ret = pyexec_file_if_exists("boot.py");
 
+        #if MICROPY_HW_ENABLE_USBDEV
         mp_usbd_init();
+        #endif
 
         if (ret & PYEXEC_FORCED_EXIT) {
             goto soft_reset_exit;

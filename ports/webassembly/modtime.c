@@ -3,7 +3,7 @@
  *
  * The MIT License (MIT)
  *
- * Copyright (c) 2022 Angus Gratton
+ * Copyright (c) 2023 Damien P. George
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,12 +23,29 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef MICROPY_INCLUDED_SHARED_TINYUSB_MP_USBD_INTERNAL_H
-#define MICROPY_INCLUDED_SHARED_TINYUSB_MP_USBD_INTERNAL_H
-#include "tusb.h"
 
-// Static USB device descriptor values
-extern const tusb_desc_device_t mp_usbd_desc_device_static;
-extern const uint8_t mp_usbd_desc_cfg_static[USBD_STATIC_DESC_LEN];
+#include "py/obj.h"
+#include "shared/timeutils/timeutils.h"
+#include "library.h"
 
-#endif // MICROPY_INCLUDED_SHARED_TINYUSB_MP_USBD_INTERNAL_H
+// Return the localtime as an 8-tuple.
+static mp_obj_t mp_time_localtime_get(void) {
+    timeutils_struct_time_t tm;
+    timeutils_seconds_since_epoch_to_struct_time(mp_hal_time_ms() / 1000, &tm);
+    mp_obj_t tuple[8] = {
+        mp_obj_new_int(tm.tm_year),
+        mp_obj_new_int(tm.tm_mon),
+        mp_obj_new_int(tm.tm_mday),
+        mp_obj_new_int(tm.tm_hour),
+        mp_obj_new_int(tm.tm_min),
+        mp_obj_new_int(tm.tm_sec),
+        mp_obj_new_int(tm.tm_wday),
+        mp_obj_new_int(tm.tm_yday),
+    };
+    return mp_obj_new_tuple(8, tuple);
+}
+
+// Returns the number of seconds, as a float, since the Epoch.
+static mp_obj_t mp_time_time_get(void) {
+    return mp_obj_new_float((mp_float_t)mp_hal_time_ms() / 1000);
+}
