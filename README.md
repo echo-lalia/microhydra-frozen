@@ -1,3 +1,11 @@
+<p align="center">
+    <a href="https://github.com/echo-lalia/MicroHydra-Apps" alt="Apps">
+        <img src="https://img.shields.io/badge/Apps-purple" /></a>
+ &nbsp;&nbsp;
+    <a href="https://github.com/echo-lalia/Cardputer-MicroHydra" alt="MicroHydra">
+        <img src="https://img.shields.io/badge/MicroHydra-purple" /></a>
+</p>
+
 # MicroHydra - frozen
 
 This is a fork from the official MicroPython github, meant to be specifically used for compiling MicroHydra into a firmware for the Cardputer. 
