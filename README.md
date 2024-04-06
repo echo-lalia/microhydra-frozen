@@ -4,6 +4,9 @@
  &nbsp;&nbsp;
     <a href="https://github.com/echo-lalia/Cardputer-MicroHydra" alt="MicroHydra">
         <img src="https://img.shields.io/badge/MicroHydra-purple" /></a>
+  &nbsp;&nbsp;
+    <a href="https://github.com/echo-lalia/Cardputer-MicroHydra/wiki" alt="Wiki">
+        <img src="https://img.shields.io/badge/Wiki-slateblue" /></a>
 </p>
 
 # MicroHydra - frozen
