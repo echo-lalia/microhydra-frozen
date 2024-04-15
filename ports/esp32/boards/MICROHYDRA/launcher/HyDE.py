@@ -4,9 +4,10 @@ from machine import Pin, SPI, RTC
 from font import vga1_8x16 as font
 from lib import microhydra as mh
 import os, time, sys
+from esp32 import NVS
 
 # increased freq makes fancy text drawing faster. This may not be necessary if fancytext function is optimized
-machine.freq(240000000)
+machine.freq(240_000_000)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Constants: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 _DISPLAY_WIDTH = const(240)
@@ -18,13 +19,15 @@ _DISPLAY_LINES = const(10)
 _DISPLAY_PADDING = const(1) # padding between lines
 
 _LEFT_PADDING = const(8)
-_LEFT_RULE = const(5)
+_LEFT_RULE = const(6)
 _INDENT_RULE_OFFSET = const(_LEFT_RULE - _LEFT_PADDING)
 
 _RIGHT_TEXT_FADE = const(_DISPLAY_WIDTH - 8)
 
 _TEXT_HEIGHT = const(16 + _DISPLAY_PADDING)
 _SMALL_TEXT_HEIGHT = const(8 + _DISPLAY_PADDING)
+_TEXT_HEIGHT_HALF = const(_TEXT_HEIGHT//2)
+_SMALL_TEXT_HEIGHT_HALF = const(_SMALL_TEXT_HEIGHT//2)
 
 _CURSOR_BLINK_MS = const(1000)
 _CURSOR_BLINK_HALF = const(_CURSOR_BLINK_MS // 2)
@@ -37,7 +40,16 @@ _ALPHA_CLASS = const(7)
 _DIGIT_CLASS = const(8)
 _DOT_CLASS = const(9)
 _SPACE_CLASS = const(1)
+_INDENT_CLASS = const(2)
 _OTHER_CLASS = const(4)
+
+# rarely used whitespace chars are repurposed to denote converted tab/space indents
+_INDENT_SYM = const(' ')
+# _SPACE_INDENT_SYM = const(' ')
+# _TAB_INDENT_SYM = const(' ')
+_SPACE_INDENT = const('    ')
+_TAB_INDENT = const('	')
+
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Global Objects: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # sd needs to be mounted for any files in /sd
@@ -62,6 +74,12 @@ tft = st7789fbuf.ST7789(
 kb = keyboard.KeyBoard()
 rtc = machine.RTC()
 config = mhconfig.Config()
+nvs = NVS("HyDE")
+
+# load config option to use tabs/spaces
+use_tabs = False
+
+
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Generate color palette: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def shift_color565_hue(color, shift):
@@ -80,7 +98,6 @@ def shift_color565_hue(color, shift):
 str_color = shift_color565_hue(config.palette[5], -0.4)
 dark_str_color = shift_color565_hue(config.palette[3], -0.2)
 
-# num_color = shift_color565_hue(config.palette[5], -0.5)
 num_color = shift_color565_hue(
     mhconfig.mix_color565(config.palette[1], config.palette[5], mix_factor=0.95, hue_mix_fac=0, sat_mix_fac=0.95),
     -0.15
@@ -88,33 +105,80 @@ num_color = shift_color565_hue(
 
 op_color = mhconfig.mix_color565(config.palette[1], config.palette[5], mix_factor=0.9, hue_mix_fac=0.7, sat_mix_fac=0.8)
 
-# keyword_color = shift_color565_hue(config.palette[5], -0.3)
 keyword_color = mhconfig.mix_color565(config.palette[1], config.palette[5], mix_factor=1, hue_mix_fac=0.3, sat_mix_fac=0.7)
 
-#comment_color = shift_color565_hue(config.palette[3], -0.2)
 comment_color = mhconfig.mix_color565(config.palette[1], config.palette[5], mix_factor=0.5, hue_mix_fac=0, sat_mix_fac=0.1)
 dark_comment_color = mhconfig.mix_color565(config.palette[1], config.palette[5], mix_factor=0.25, hue_mix_fac=0, sat_mix_fac=0.1)
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Functions: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Function defs: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 def file_options(target_file,overlay,editor):
     """Give file options menu"""
-    _OPTIONS = const(("Back", "Save", "Run here", "Restart and run", "Exit to Files"))
+    _OPTIONS = (("Back", "Save", "Tab...", "Run...", "Exit..."))
+    
     choice = overlay.popup_options(_OPTIONS,title="GO...")
     
     if choice == "Back":
         return
     elif choice == "Save":
         editor.save_file(target_file)
+    elif choice == "Run...":
+        run_options(target_file,overlay,editor)
+    elif choice == "Exit...":
+        exit_options(target_file,overlay,editor)
+    elif choice == "Tab...":
+        tab_options(target_file,overlay,editor)
+
+def tab_options(target_file,overlay,editor):
+    """Give tab options menu"""
+    global use_tabs
+    title = "'tab' inserts tabs" if use_tabs else "'tab' inserts spaces"
+    _OPTIONS = (("Back", "Use tabs", "Use spaces"))
+    
+    choice = overlay.popup_options(_OPTIONS,title=title,extended_border=True)
+    
+    if choice == "Back":
+        return
+    elif choice == "Use tabs":
+        use_tabs = True
+        nvs.set_i32("use_tabs",True)
+        nvs.commit()
+    elif choice == "Use spaces":
+        use_tabs = False
+        nvs.set_i32("use_tabs",False)
+        nvs.commit()
+
+def run_options(target_file,overlay,editor):
+    _RUN_OPTIONS = const(("Cancel", "Run here", "Restart and run"))
+    choice = overlay.popup_options(_RUN_OPTIONS,extended_border=True)
+    if choice == "Cancel":
+        return
     elif choice == "Run here":
         run_file_here(target_file, overlay, editor)
     elif choice == "Restart and run":
         boot_into_file(target_file,overlay)
+
+def exit_options(target_file,overlay,editor):
+    _EXIT_OPTIONS = const(("Cancel", "Exit to Files", "Exit to Launcher"))
+    choice = overlay.popup_options(_EXIT_OPTIONS,extended_border=True)
+    if choice == "Cancel":
+        return
     elif choice == "Exit to Files":
         choice = overlay.popup_options(("Save", "Discard"),title="Save changes?")
         if choice == "Save":
             editor.save_file(target_file)
         boot_into_file(_FILE_BROWSER, overlay)
-
+    elif choice == "Exit to Launcher":
+        choice = overlay.popup_options(("Save", "Discard"),title="Save changes?")
+        if choice == "Save":
+            editor.save_file(target_file)
+        boot_into_file('', overlay)
+        
 def boot_into_file(target_file,overlay):
     """Restart and load into target file."""
     overlay.draw_textbox("Restarting...", _DISPLAY_WIDTH//2, _DISPLAY_HEIGHT//2)
@@ -124,7 +188,7 @@ def boot_into_file(target_file,overlay):
     machine.reset()
     
 def run_file_here(filepath, overlay, editor):
-    """Try running the target file here"""
+    """Try running the target file here"""    
     editor.save_file(filepath)
     overlay.draw_textbox("Running...", _DISPLAY_WIDTH//2, _DISPLAY_HEIGHT//2)
     tft.show()
@@ -139,7 +203,12 @@ def run_file_here(filepath, overlay, editor):
     except Exception as e:
         overlay.error(f"File closed with error: {e}")
 
-def classify_char(char):
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~ String formatting/classification: ~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+def classify_char(char) -> int:
     """Classify char types for comparison. Returns an int representing the type."""
     if char == None:
         return _NONE_CLASS
@@ -151,9 +220,12 @@ def classify_char(char):
         return _DOT_CLASS
     elif char.isspace():
         return _SPACE_CLASS
+    elif char == _INDENT_SYM:
+        return _INDENT_CLASS
     return _OTHER_CLASS
 
-def is_var(string):
+
+def is_var(string) -> bool:
     """Check if string could be a variable name."""
     for idx, char in enumerate(string):
         if idx == 0:
@@ -166,6 +238,7 @@ def is_var(string):
                 return False
     return True
 
+
 def is_numeric(string):
     """Check if string is numeric. Support for "_" and "." """
     any_numbers = False
@@ -176,13 +249,89 @@ def is_numeric(string):
             return False
     return any_numbers
 
+
 #string formatter
+def remove_line_breaks(line):
+    if line.endswith('\r') or line.endswith('\n'):
+        line = line[:-1]
+    if line.endswith('\r') or line.endswith('\n'):
+        line = line[:-1]
+    return line
+
+
+def replace_tabs(line):
+    """replace tabs with fake tab"""
+    tab_syms = ''
+    while line.startswith(_TAB_INDENT):
+        line = line[1:]
+        tab_syms += _INDENT_SYM
+    return tab_syms + line
+
+
+def replace_space_indents(line):
+    """replace space indents with fake tab"""
+    space_syms = ''
+    while line.startswith(' '):
+        # we must handle cases where less than 4 spaces are used, but we expect 4.
+        for _ in range(4):
+            if line.startswith(' '):
+                line = line[1:]
+        space_syms += _INDENT_SYM
+    return space_syms + line
+
+
+def auto_set_tabs(lines):
+    for line in lines:
+        if line.startswith(_TAB_INDENT):
+            return True
+        elif line.startswith(_SPACE_INDENT):
+            return False
+    return None
+
+
 def clean_line(line):
-    return line.replace('\r',''
-                ).replace('\n','')
+    line = remove_line_breaks(line)
+    line = replace_space_indents(line)
+    line = replace_tabs(line)
+    return line
+
+
+def format_display_line(line):
+    line = line.replace(_INDENT_SYM, ' ')
+    return line
+
+
+def segment_from_str(string, index):
+    """Extract word segment from index, based on classify_char"""
+    output_str = ""
+    start_class = classify_char(string[index])
+    idx = index  
+    while idx < len(string): # look right
+        if (classify_char(string[idx]) == start_class 
+            )or (start_class == _ALPHA_CLASS and classify_char(string[idx]) == _DIGIT_CLASS # allow numbers on vars
+            )or (start_class == _DOT_CLASS and classify_char(string[idx]) == _DIGIT_CLASS # allow numbers to start with a "."
+            )or (start_class == _DIGIT_CLASS and classify_char(string[idx]) == _DOT_CLASS): # allow numbers with "." at the end or middle
+            
+            output_str += string[idx]
+            idx += 1
+        else: break
+    idx = index - 1
+    while idx >= 0: # look left
+        if classify_char(string[idx]) == start_class:
+            output_str = string[idx] + output_str
+            idx -= 1
+        else: break
+    return output_str
+    
+    
+    
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Graphics Functions: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 def draw_small_line(line,x,y,fade=0):
     """apply special styling to a small line and display it."""
+    line = format_display_line(line)
     is_comment = False
     string_char = None
     for idx, char in enumerate(line):
@@ -221,45 +370,21 @@ def draw_small_line(line,x,y,fade=0):
         if string_char == "END": string_char = None
         x += 8
 
-def segment_from_str(string, index):
-    """Extract word segment from index, based on classify_char"""
-    output_str = ""
-    start_class = classify_char(string[index])
-    idx = index  
-    while idx < len(string): # look right
-        if (classify_char(string[idx]) == start_class 
-            )or (start_class == _ALPHA_CLASS and classify_char(string[idx]) == _DIGIT_CLASS # allow numbers on vars
-            )or (start_class == _DOT_CLASS and classify_char(string[idx]) == _DIGIT_CLASS # allow numbers to start with a "."
-            )or (start_class == _DIGIT_CLASS and classify_char(string[idx]) == _DOT_CLASS): # allow numbers with "." at the end or middle
-            
-            output_str += string[idx]
-            idx += 1
-        else: break
-    idx = index - 1
-    while idx >= 0: # look left
-        if classify_char(string[idx]) == start_class:
-            output_str = string[idx] + output_str
-            idx -= 1
-        else: break
-    return output_str
+
+def draw_rule(x,y,small=False, highlight=False):
+    tft.vline(
+        x+6,y,
+        _SMALL_TEXT_HEIGHT if small else _TEXT_HEIGHT,
+        config.palette[1] if highlight else config.palette[0]
+        )
+
 
 def draw_rules(line,x,y,small=False,highlight=False):
-    x += _INDENT_RULE_OFFSET
-    if small:
-        height = _SMALL_TEXT_HEIGHT
-    else:
-        height = _TEXT_HEIGHT
-    if highlight:
-        color=config.palette[1]
-    else:
-        color=config.palette[0]
-    
-    for idx, char in enumerate(line):
-        if not char.isspace():
-            return
-        if idx % 4 == 0:
-            tft.vline(x,y,height,color)
+    while line.startswith(_INDENT_SYM):
+        line = line[1:]
+        draw_rule(x,y,small=small,highlight=highlight)
         x += 8
+
 
 def draw_fancy_line(line, x, y, highlight=False, trim=True):
     """apply special styling to a line and display it."""
@@ -268,7 +393,7 @@ def draw_fancy_line(line, x, y, highlight=False, trim=True):
                        'nonlocal','not','or','pass','raise','return','True','try','while','with','yield'))
     _OPERATORS = const("<>,|[]{}()*^%!=-+/:;&@")
     # TODO: I worry this may be extremely unoptomized. Should maybe be tested/optimized further.
-    
+    line = format_display_line(line)
     # trim right part of line to speed up styling
     if len(line) > _HORIZONTAL_CHARACTERS and trim:
         offset = 0
@@ -295,7 +420,6 @@ def draw_fancy_line(line, x, y, highlight=False, trim=True):
         # track current word segment
         if segment_counter <= 0: # need to fetch next segment
             # currently we only care about these, so might as well save some time
-            #if char.isalpha() or char.isdigit() or char == "_":
             current_segment = segment_from_str(line, idx)
             segment_counter = len(current_segment)
             
@@ -351,7 +475,13 @@ def draw_fancy_line(line, x, y, highlight=False, trim=True):
         
         x += 8
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Editor Class: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+#--------------------------------------------------------------------------------------------------
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Editor Class: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#--------------------------------------------------------------------------------------------------
 class Editor:
     #class to handle our text editor display and state
     def __init__(self, overlay):
@@ -395,8 +525,9 @@ class Editor:
                     
     def get_current_indentation(self):
         current_line, _ = self.split_line_at_cursor()
-        # if current_line is indented at all
-        if current_line and current_line[0].isspace():
+        
+        # if current_line is indented at all:
+        if current_line and current_line[0] == _INDENT_SYM:
             return segment_from_str(current_line,0)
         return ""
         
@@ -445,6 +576,12 @@ class Editor:
         self.lines[self.cursor_index[1]] = l_line + char + r_line
         self.move_right()
         
+    def insert_tab(self):
+        """insert a tab at the cursor"""
+        l_line, r_line = self.split_line_at_cursor()
+        
+        self.lines[self.cursor_index[1]] = l_line + _INDENT_SYM + r_line
+        self.move_right()
     
     def insert_line(self):
         """insert a new line at the cursor"""
@@ -452,7 +589,7 @@ class Editor:
         
         # auto indent
         if l_line.endswith(':'):
-            indent = self.get_current_indentation() + "    "
+            indent = self.get_current_indentation() + _INDENT_SYM
             r_line = indent + r_line
             indent_count = len(indent)
         else:
@@ -471,20 +608,19 @@ class Editor:
     def backspace(self):
         """delete a character at the cursor"""
         l_line, r_line = self.split_line_at_cursor()
+        
+        # if cursor at start of line, delete line:
         if not l_line and self.cursor_index[1] > 0:
             self.lines[self.cursor_index[1] - 1] += r_line
             self.lines = self.lines[:self.cursor_index[1]] + self.lines[self.cursor_index[1] + 1:]
             self.move_left()
             self.cursor_index[0] -= len(r_line)
+            
+        # else, delete one char:
         else:
-            if len(l_line) >= 4 and l_line.isspace():
-                self.lines[self.cursor_index[1]] = l_line[:len(l_line)-4] + r_line
-                self.cursor_index[0] = max(0,self.cursor_index[0] - 3)
-                self.move_left()
-
-            else:
-                self.lines[self.cursor_index[1]] = l_line[:len(l_line)-1] + r_line
-                self.move_left()
+            self.lines[self.cursor_index[1]] = l_line[:-1] + r_line
+            self.move_left()
+            
         self.display_to_cursor_x()
         
         
@@ -625,6 +761,9 @@ class Editor:
         tft.show()
         with open(filepath,"w") as file:
             for line in self.lines:
+                line = line.replace(
+                    _INDENT_SYM, _TAB_INDENT if use_tabs else _SPACE_INDENT 
+                    )
                 file.write(line + "\r\n")
     
     def copy_line(self):
@@ -648,8 +787,11 @@ class Editor:
         
         
         
+#--------------------------------------------------------------------------------------------------
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Main Loop: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def main_loop():
-    global str_color, dark_str_color, keyword_color, comment_color, dark_comment_color
+    global str_color, dark_str_color, keyword_color, comment_color, dark_comment_color, use_tabs
     
     tft.fill(config['bg_color'])
     overlay = mhoverlay.UI_Overlay(config, kb, display_fbuf=tft)
@@ -675,6 +817,18 @@ def main_loop():
     #for when file empty
     if not editor.lines:
         editor.lines = ['']
+        
+    # set 'use tabs' option based on first indent found in file.
+    use_tabs = auto_set_tabs(editor.lines)
+    # if 'auto_set_tabs' returned None, use stored value instead
+    if use_tabs == None:
+        try:
+            use_tabs = bool(nvs.get_i32("use_tabs"))
+        except:
+            use_tabs = False
+            nvs.set_i32("use_tabs",0)
+            nvs.commit()
+    
         
     for idx, line in enumerate(editor.lines):
         editor.lines[idx] = clean_line(line)
@@ -760,10 +914,7 @@ def main_loop():
                         editor.insert_char(" ")
                         
                     elif key == "TAB":
-                        editor.insert_char(" ") #TODO: implement real tab support
-                        editor.insert_char(" ")
-                        editor.insert_char(" ")
-                        editor.insert_char(" ")
+                        editor.insert_tab()
                     
                     elif key == "GO":
                         # file actions menu

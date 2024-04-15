@@ -1,7 +1,9 @@
+set(MICROPY_FROZEN_MANIFEST ${MICROPY_BOARD_DIR}/manifest.py)
 set(IDF_TARGET esp32s3)
 
 set(SDKCONFIG_DEFAULTS
     boards/sdkconfig.base
+    ${SDKCONFIG_IDF_VERSION_SPECIFIC}
     boards/sdkconfig.usb
     boards/sdkconfig.ble
     boards/sdkconfig.spiram_sx
@@ -20,4 +22,9 @@ if(MICROPY_BOARD_VARIANT STREQUAL "SPIRAM_OCT")
     )
 endif()
 
-set(MICROPY_FROZEN_MANIFEST ${MICROPY_BOARD_DIR}/manifest.py)
+if(MICROPY_BOARD_VARIANT STREQUAL "FLASH_4M")
+    set(SDKCONFIG_DEFAULTS
+        ${SDKCONFIG_DEFAULTS}
+        boards/ESP32_GENERIC_S3/sdkconfig.flash_4m
+    )
+endif()
