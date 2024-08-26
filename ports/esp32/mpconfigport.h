@@ -18,9 +18,8 @@
 
 // object representation and NLR handling
 #define MICROPY_OBJ_REPR                    (MICROPY_OBJ_REPR_A)
+#if !CONFIG_IDF_TARGET_ESP32C3
 #define MICROPY_NLR_SETJMP                  (1)
-#if CONFIG_IDF_TARGET_ESP32C3
-#define MICROPY_GCREGS_SETJMP               (1)
 #endif
 
 // memory allocation policies
@@ -44,6 +43,8 @@
 #define MICROPY_PERSISTENT_CODE_LOAD        (1)
 #if !CONFIG_IDF_TARGET_ESP32C3
 #define MICROPY_EMIT_XTENSAWIN              (1)
+#else
+#define MICROPY_EMIT_RV32                   (1)
 #endif
 
 // workaround for xtensa-esp32-elf-gcc esp-2020r3, which can generate wrong code for loops
@@ -61,6 +62,7 @@
 // Python internal features
 #define MICROPY_READER_VFS                  (1)
 #define MICROPY_ENABLE_GC                   (1)
+#define MICROPY_STACK_CHECK_MARGIN          (1024)
 #define MICROPY_ENABLE_EMERGENCY_EXCEPTION_BUF (1)
 #define MICROPY_LONGINT_IMPL                (MICROPY_LONGINT_IMPL_MPZ)
 #define MICROPY_ERROR_REPORTING             (MICROPY_ERROR_REPORTING_NORMAL)
@@ -95,7 +97,10 @@
 #define MICROPY_PY_BLUETOOTH                (1)
 #define MICROPY_PY_BLUETOOTH_USE_SYNC_EVENTS (1)
 #define MICROPY_PY_BLUETOOTH_USE_SYNC_EVENTS_WITH_INTERLOCK (1)
-#define MICROPY_PY_BLUETOOTH_SYNC_EVENT_STACK_SIZE (CONFIG_BT_NIMBLE_TASK_STACK_SIZE - 2048)
+// Event stack size is the RTOS stack size minus an allowance for the stack used
+// by the NimBLE functions that call into invoke_irq_handler().
+// MICROPY_STACK_CHECK_MARGIN is further subtracted from this value to set the stack limit.
+#define MICROPY_PY_BLUETOOTH_SYNC_EVENT_STACK_SIZE (CONFIG_BT_NIMBLE_TASK_STACK_SIZE - 1024)
 #define MICROPY_PY_BLUETOOTH_ENABLE_CENTRAL_MODE (1)
 #define MICROPY_PY_BLUETOOTH_ENABLE_PAIRING_BONDING (1)
 #define MICROPY_BLUETOOTH_NIMBLE            (1)
@@ -136,8 +141,6 @@
 #define MICROPY_PY_MACHINE_I2C_TRANSFER_WRITE1 (1)
 #define MICROPY_PY_MACHINE_SOFTI2C          (1)
 #define MICROPY_PY_MACHINE_SPI              (1)
-#define MICROPY_PY_MACHINE_SPI_MSB          (0)
-#define MICROPY_PY_MACHINE_SPI_LSB          (1)
 #define MICROPY_PY_MACHINE_SOFTSPI          (1)
 #ifndef MICROPY_PY_MACHINE_DAC
 #define MICROPY_PY_MACHINE_DAC              (SOC_DAC_SUPPORTED)
@@ -287,6 +290,10 @@ typedef long mp_off_t;
 #define MICROPY_PY_MACHINE_BOOTLOADER       (0)
 #endif
 
+// Workaround for upstream bug https://github.com/espressif/esp-idf/issues/14273
+// Can be removed if a fix is available in supported ESP-IDF versions.
+#define MICROPY_PY_MATH_GAMMA_FIX_NEGINF (1)
+
 #ifndef MICROPY_BOARD_STARTUP
 #define MICROPY_BOARD_STARTUP boardctrl_startup
 #endif
@@ -309,4 +316,9 @@ void boardctrl_startup(void);
 #define MICROPY_PY_NETWORK_LAN_SPI_CLOCK_SPEED_MZ       (36)
 #endif
 #endif
+#endif
+
+// The minimum string length threshold for string printing to stdout operations to be GIL-aware.
+#ifndef MICROPY_PY_STRING_TX_GIL_THRESHOLD
+#define MICROPY_PY_STRING_TX_GIL_THRESHOLD  (20)
 #endif

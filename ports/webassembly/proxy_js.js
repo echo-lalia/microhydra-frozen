@@ -24,6 +24,9 @@
  * THE SOFTWARE.
  */
 
+// Number of static entries at the start of proxy_js_ref.
+const PROXY_JS_REF_NUM_STATIC = 2;
+
 // These constants should match the constants in proxy_c.c.
 
 const PROXY_KIND_MP_EXCEPTION = -1;
@@ -37,7 +40,9 @@ const PROXY_KIND_MP_CALLABLE = 6;
 const PROXY_KIND_MP_GENERATOR = 7;
 const PROXY_KIND_MP_OBJECT = 8;
 const PROXY_KIND_MP_JSPROXY = 9;
+const PROXY_KIND_MP_EXISTING = 10;
 
+const PROXY_KIND_JS_UNDEFINED = 0;
 const PROXY_KIND_JS_NULL = 1;
 const PROXY_KIND_JS_BOOLEAN = 2;
 const PROXY_KIND_JS_INTEGER = 3;
@@ -55,7 +60,60 @@ class PythonError extends Error {
 }
 
 function proxy_js_init() {
-    globalThis.proxy_js_ref = [globalThis];
+    globalThis.proxy_js_ref = [globalThis, undefined];
+    globalThis.proxy_js_ref_next = PROXY_JS_REF_NUM_STATIC;
+    globalThis.proxy_js_map = new Map();
+    globalThis.proxy_js_existing = [undefined];
+    globalThis.pyProxyFinalizationRegistry = new FinalizationRegistry(
+        (cRef) => {
+            globalThis.proxy_js_map.delete(cRef);
+            Module.ccall("proxy_c_free_obj", "null", ["number"], [cRef]);
+        },
+    );
+}
+
+// Check if the c_ref (Python proxy index) has a corresponding JavaScript-side PyProxy
+// associated with it.  If so, take a concrete reference to this PyProxy from the WeakRef
+// and put it in proxy_js_existing, to be referenced and reused by PROXY_KIND_MP_EXISTING.
+function proxy_js_check_existing(c_ref) {
+    const existing_obj = globalThis.proxy_js_map.get(c_ref)?.deref();
+    if (existing_obj === undefined) {
+        return -1;
+    }
+
+    // Search for a free slot in proxy_js_existing.
+    for (let i = 0; i < globalThis.proxy_js_existing.length; ++i) {
+        if (globalThis.proxy_js_existing[i] === undefined) {
+            // Free slot found, put existing_obj here and return the index.
+            globalThis.proxy_js_existing[i] = existing_obj;
+            return i;
+        }
+    }
+
+    // No free slot, so append to proxy_js_existing and return the new index.
+    globalThis.proxy_js_existing.push(existing_obj);
+    return globalThis.proxy_js_existing.length - 1;
+}
+
+// js_obj cannot be undefined
+function proxy_js_add_obj(js_obj) {
+    // Search for the first free slot in proxy_js_ref.
+    while (proxy_js_ref_next < proxy_js_ref.length) {
+        if (proxy_js_ref[proxy_js_ref_next] === undefined) {
+            // Free slot found, reuse it.
+            const id = proxy_js_ref_next;
+            ++proxy_js_ref_next;
+            proxy_js_ref[id] = js_obj;
+            return id;
+        }
+        ++proxy_js_ref_next;
+    }
+
+    // No free slots, so grow proxy_js_ref by one (append at the end of the array).
+    const id = proxy_js_ref.length;
+    proxy_js_ref[id] = js_obj;
+    proxy_js_ref_next = proxy_js_ref.length;
+    return id;
 }
 
 function proxy_call_python(target, argumentsList) {
@@ -109,7 +167,9 @@ function proxy_call_python(target, argumentsList) {
 
 function proxy_convert_js_to_mp_obj_jsside(js_obj, out) {
     let kind;
-    if (js_obj === null) {
+    if (js_obj === undefined) {
+        kind = PROXY_KIND_JS_UNDEFINED;
+    } else if (js_obj === null) {
         kind = PROXY_KIND_JS_NULL;
     } else if (typeof js_obj === "boolean") {
         kind = PROXY_KIND_JS_BOOLEAN;
@@ -144,8 +204,7 @@ function proxy_convert_js_to_mp_obj_jsside(js_obj, out) {
         Module.setValue(out + 4, js_obj._ref, "i32");
     } else {
         kind = PROXY_KIND_JS_OBJECT;
-        const id = proxy_js_ref.length;
-        proxy_js_ref[id] = js_obj;
+        const id = proxy_js_add_obj(js_obj);
         Module.setValue(out + 4, id, "i32");
     }
     Module.setValue(out + 0, kind, "i32");
@@ -158,8 +217,7 @@ function proxy_convert_js_to_mp_obj_jsside_force_double_proxy(js_obj, out) {
         js_obj instanceof PyProxyThenable
     ) {
         const kind = PROXY_KIND_JS_OBJECT;
-        const id = proxy_js_ref.length;
-        proxy_js_ref[id] = js_obj;
+        const id = proxy_js_add_obj(js_obj);
         Module.setValue(out + 4, id, "i32");
         Module.setValue(out + 0, kind, "i32");
     } else {
@@ -210,6 +268,10 @@ function proxy_convert_mp_to_js_obj_jsside(value) {
         // js proxy
         const id = Module.getValue(value + 4, "i32");
         obj = proxy_js_ref[id];
+    } else if (kind === PROXY_KIND_MP_EXISTING) {
+        const id = Module.getValue(value + 4, "i32");
+        obj = globalThis.proxy_js_existing[id];
+        globalThis.proxy_js_existing[id] = undefined;
     } else {
         // obj
         const id = Module.getValue(value + 4, "i32");
@@ -225,6 +287,8 @@ function proxy_convert_mp_to_js_obj_jsside(value) {
             const target = new PyProxy(id);
             obj = new Proxy(target, py_proxy_handler);
         }
+        globalThis.pyProxyFinalizationRegistry.register(obj, id);
+        globalThis.proxy_js_map.set(id, new WeakRef(obj));
     }
     return obj;
 }

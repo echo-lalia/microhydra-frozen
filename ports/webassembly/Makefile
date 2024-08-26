@@ -22,6 +22,9 @@ BUILD ?= build-$(VARIANT)
 include ../../py/mkenv.mk
 include $(VARIANT_DIR)/mpconfigvariant.mk
 
+# Use the default frozen manifest, variants may override this.
+FROZEN_MANIFEST ?= variants/manifest.py
+
 # Qstr definitions (must come before including py.mk).
 QSTR_DEFS = qstrdefsport.h
 
@@ -51,14 +54,17 @@ EXPORTED_FUNCTIONS_EXTRA += ,\
 	_mp_js_do_exec_async,\
 	_mp_js_do_import,\
 	_mp_js_register_js_module,\
+	_proxy_c_free_obj,\
 	_proxy_c_init,\
 	_proxy_c_to_js_call,\
 	_proxy_c_to_js_delete_attr,\
 	_proxy_c_to_js_dir,\
 	_proxy_c_to_js_get_array,\
 	_proxy_c_to_js_get_dict,\
+	_proxy_c_to_js_get_iter,\
 	_proxy_c_to_js_get_type,\
 	_proxy_c_to_js_has_attr,\
+	_proxy_c_to_js_iternext,\
 	_proxy_c_to_js_lookup_attr,\
 	_proxy_c_to_js_resume,\
 	_proxy_c_to_js_store_attr,\

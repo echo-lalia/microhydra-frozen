@@ -167,6 +167,7 @@ SRC_LIB_LIBM_DBL_SQRT_HW_C += lib/libm_dbl/thumb_vfp_sqrt.c
 
 # Too many warnings in libm_dbl, disable for now.
 $(BUILD)/lib/libm_dbl/%.o: CFLAGS += -Wno-double-promotion -Wno-float-conversion
+$(BUILD)/lib/libm_dbl/__rem_pio2_large.o: CFLAGS += -Wno-maybe-uninitialized
 
 ################################################################################
 # VFS FAT FS
@@ -526,6 +527,7 @@ ifeq ($(MICROPY_PY_OPENAMP),1)
 OPENAMP_DIR = lib/open-amp
 LIBMETAL_DIR = lib/libmetal
 GIT_SUBMODULES += $(LIBMETAL_DIR) $(OPENAMP_DIR)
+MICROPY_PY_OPENAMP_MODE ?= 0
 include $(TOP)/extmod/libmetal/libmetal.mk
 
 INC += -I$(TOP)/$(OPENAMP_DIR)
@@ -535,12 +537,21 @@ ifeq ($(MICROPY_PY_OPENAMP_REMOTEPROC),1)
 CFLAGS += -DMICROPY_PY_OPENAMP_REMOTEPROC=1
 endif
 
+ifeq ($(MICROPY_PY_OPENAMP_MODE),0)
+CFLAGS += -DMICROPY_PY_OPENAMP_HOST=1
+CFLAGS_THIRDPARTY += -DVIRTIO_DRIVER_ONLY
+else ifeq ($(MICROPY_PY_OPENAMP_MODE),1)
+CFLAGS += -DMICROPY_PY_OPENAMP_DEVICE=1
+CFLAGS_THIRDPARTY += -DVIRTIO_DEVICE_ONLY
+else
+$(error Invalid Open-AMP mode specified: $(MICROPY_PY_OPENAMP_MODE))
+endif
+
 CFLAGS_THIRDPARTY += \
     -I$(BUILD)/openamp \
     -I$(TOP)/$(OPENAMP_DIR) \
     -I$(TOP)/$(OPENAMP_DIR)/lib/include/ \
     -DMETAL_INTERNAL \
-    -DVIRTIO_DRIVER_ONLY \
     -DNO_ATOMIC_64_SUPPORT \
     -DRPMSG_BUFFER_SIZE=512 \
 
