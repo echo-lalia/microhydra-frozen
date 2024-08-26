@@ -28,7 +28,7 @@
 #include "py/mphal.h"
 #include "usb.h"
 
-#if CONFIG_USB_OTG_SUPPORTED && !CONFIG_ESP_CONSOLE_USB_CDC && !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#if CONFIG_USB_OTG_SUPPORTED && !CONFIG_ESP_CONSOLE_USB_CDC && !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
 
 #include "esp_timer.h"
 #ifndef NO_QSTR
@@ -79,7 +79,7 @@ void usb_init(void) {
         .callback_rx_wanted_char = &MICROPY_HW_USB_CUSTOM_RX_WANTED_CHAR_CB,
         #endif
         #ifdef MICROPY_HW_USB_CUSTOM_LINE_STATE_CB
-        .callback_line_state_changed = &MICROPY_HW_USB_CUSTOM_LINE_STATE_CB,
+        .callback_line_state_changed = (tusb_cdcacm_callback_t)&MICROPY_HW_USB_CUSTOM_LINE_STATE_CB,
         #endif
         #ifdef MICROPY_HW_USB_CUSTOM_LINE_CODING_CB
         .callback_line_coding_changed = &MICROPY_HW_USB_CUSTOM_LINE_CODING_CB,
@@ -100,4 +100,4 @@ void usb_tx_strn(const char *str, size_t len) {
     }
 }
 
-#endif // CONFIG_USB_OTG_SUPPORTED && !CONFIG_ESP_CONSOLE_USB_CDC && !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#endif // CONFIG_USB_OTG_SUPPORTED && !CONFIG_ESP_CONSOLE_USB_CDC && !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED

@@ -37,8 +37,6 @@
 #include "hardware/irq.h"
 #include "hardware/pio.h"
 
-#define PIO_NUM(pio) ((pio) == pio0 ? 0 : 1)
-
 typedef struct _rp2_pio_obj_t {
     mp_obj_base_t base;
     PIO pio;
@@ -82,7 +80,7 @@ static void pio_irq0(PIO pio) {
     pio->irq = ints >> 8;
 
     // Call handler if it is registered, for PIO irqs.
-    rp2_pio_irq_obj_t *irq = MP_STATE_PORT(rp2_pio_irq_obj[PIO_NUM(pio)]);
+    rp2_pio_irq_obj_t *irq = MP_STATE_PORT(rp2_pio_irq_obj[pio_get_index(pio)]);
     if (irq != NULL && (ints & irq->trigger)) {
         irq->flags = ints & irq->trigger;
         mp_irq_handler(&irq->base);
@@ -90,7 +88,7 @@ static void pio_irq0(PIO pio) {
 
     // Call handler if it is registered, for StateMachine irqs.
     for (size_t i = 0; i < 4; ++i) {
-        rp2_state_machine_irq_obj_t *irq = MP_STATE_PORT(rp2_state_machine_irq_obj[PIO_NUM(pio) * 4 + i]);
+        rp2_state_machine_irq_obj_t *irq = MP_STATE_PORT(rp2_state_machine_irq_obj[pio_get_index(pio) * 4 + i]);
         if (irq != NULL && ((ints >> (8 + i)) & irq->trigger)) {
             irq->flags = 1;
             mp_irq_handler(&irq->base);
@@ -104,6 +102,23 @@ static void pio0_irq0(void) {
 
 static void pio1_irq0(void) {
     pio_irq0(pio1);
+}
+
+// Returns the correct irq0 handler wrapper for a given pio
+static inline irq_handler_t rp2_pio_get_irq_handler(PIO pio) {
+    return pio == pio0 ? pio0_irq0 : pio1_irq0;
+}
+
+// Add the irq0 handler if it's not added, and if no other handler is present
+void rp2_pio_irq_set_exclusive_handler(PIO pio, uint irq) {
+    irq_handler_t current = irq_get_exclusive_handler(irq);
+    // If the IRQ is set and isn't our handler, or a shared handler is set, then raise an error
+    if ((current && current != rp2_pio_get_irq_handler(pio)) || irq_has_shared_handler(irq)) {
+        mp_raise_ValueError("irq claimed by external resource");
+        // If the IRQ is not set, add our handler
+    } else if (!current) {
+        irq_set_exclusive_handler(irq, rp2_pio_get_irq_handler(pio));
+    }
 }
 
 // Calls pio_add_program() and keeps track of used instruction memory.
@@ -145,15 +160,18 @@ void rp2_pio_init(void) {
     // Set up interrupts.
     memset(MP_STATE_PORT(rp2_pio_irq_obj), 0, sizeof(MP_STATE_PORT(rp2_pio_irq_obj)));
     memset(MP_STATE_PORT(rp2_state_machine_irq_obj), 0, sizeof(MP_STATE_PORT(rp2_state_machine_irq_obj)));
-    irq_set_exclusive_handler(PIO0_IRQ_0, pio0_irq0);
-    irq_set_exclusive_handler(PIO1_IRQ_0, pio1_irq0);
 }
 
 void rp2_pio_deinit(void) {
     // Disable and clear interrupts.
-    irq_set_mask_enabled((1u << PIO0_IRQ_0) | (1u << PIO0_IRQ_1), false);
-    irq_remove_handler(PIO0_IRQ_0, pio0_irq0);
-    irq_remove_handler(PIO1_IRQ_0, pio1_irq0);
+    if (irq_get_exclusive_handler(PIO0_IRQ_0) == pio0_irq0) {
+        irq_set_enabled(PIO0_IRQ_0, false);
+        irq_remove_handler(PIO0_IRQ_0, pio0_irq0);
+    }
+    if (irq_get_exclusive_handler(PIO1_IRQ_0) == pio1_irq0) {
+        irq_set_enabled(PIO1_IRQ_0, false);
+        irq_remove_handler(PIO1_IRQ_0, pio1_irq0);
+    }
 
     rp2_state_machine_reset_all();
 
@@ -228,7 +246,7 @@ static void asm_pio_init_gpio(PIO pio, uint32_t sm, asm_pio_config_t *config) {
     pio_sm_set_pins_with_mask(pio, sm, config->pinvals << config->base, pinmask);
     pio_sm_set_pindirs_with_mask(pio, sm, config->pindirs << config->base, pinmask);
     for (size_t i = 0; i < config->count; ++i) {
-        gpio_set_function(config->base + i, pio == pio0 ? GPIO_FUNC_PIO0 : GPIO_FUNC_PIO1);
+        gpio_set_function(config->base + i, GPIO_FUNC_PIO0 + pio_get_index(pio));
     }
 }
 
@@ -244,7 +262,7 @@ static rp2_pio_obj_t rp2_pio_obj[] = {
 
 static void rp2_pio_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     rp2_pio_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "PIO(%u)", self->pio == pio0 ? 0 : 1);
+    mp_printf(print, "PIO(%u)", pio_get_index(self->pio));
 }
 
 // constructor(id)
@@ -280,7 +298,7 @@ static mp_obj_t rp2_pio_add_program(mp_obj_t self_in, mp_obj_t prog_in) {
     uint offset = rp2_pio_add_managed_program(self->pio, &pio_program);
 
     // Store the program offset in the program object.
-    prog[PROG_OFFSET_PIO0 + PIO_NUM(self->pio)] = MP_OBJ_NEW_SMALL_INT(offset);
+    prog[PROG_OFFSET_PIO0 + pio_get_index(self->pio)] = MP_OBJ_NEW_SMALL_INT(offset);
 
     return mp_const_none;
 }
@@ -301,12 +319,12 @@ static mp_obj_t rp2_pio_remove_program(size_t n_args, const mp_obj_t *args) {
         mp_buffer_info_t bufinfo;
         mp_get_buffer_raise(prog[PROG_DATA], &bufinfo, MP_BUFFER_READ);
         length = bufinfo.len / 2;
-        offset = mp_obj_get_int(prog[PROG_OFFSET_PIO0 + PIO_NUM(self->pio)]);
+        offset = mp_obj_get_int(prog[PROG_OFFSET_PIO0 + pio_get_index(self->pio)]);
         if (offset < 0) {
             mp_raise_ValueError("prog not in instruction memory");
         }
         // Invalidate the program offset in the program object.
-        prog[PROG_OFFSET_PIO0 + PIO_NUM(self->pio)] = MP_OBJ_NEW_SMALL_INT(-1);
+        prog[PROG_OFFSET_PIO0 + pio_get_index(self->pio)] = MP_OBJ_NEW_SMALL_INT(-1);
     }
 
     // Remove the program from the instruction memory.
@@ -328,7 +346,7 @@ static mp_obj_t rp2_pio_state_machine(size_t n_args, const mp_obj_t *pos_args, m
     }
 
     // Return the correct StateMachine object.
-    const rp2_state_machine_obj_t *sm = rp2_state_machine_get_object((self->pio == pio0 ? 0 : 4) + sm_id);
+    const rp2_state_machine_obj_t *sm = rp2_state_machine_get_object(pio_get_index(self->pio) * 4 + sm_id);
 
     if (n_args > 2 || kw_args->used > 0) {
         // Configuration arguments given so init this StateMachine.
@@ -354,7 +372,7 @@ static mp_obj_t rp2_pio_irq(size_t n_args, const mp_obj_t *pos_args, mp_map_t *k
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     // Get the IRQ object.
-    rp2_pio_irq_obj_t *irq = MP_STATE_PORT(rp2_pio_irq_obj[PIO_NUM(self->pio)]);
+    rp2_pio_irq_obj_t *irq = MP_STATE_PORT(rp2_pio_irq_obj[pio_get_index(self->pio)]);
 
     // Allocate the IRQ object if it doesn't already exist.
     if (irq == NULL) {
@@ -364,7 +382,7 @@ static mp_obj_t rp2_pio_irq(size_t n_args, const mp_obj_t *pos_args, mp_map_t *k
         irq->base.parent = MP_OBJ_FROM_PTR(self);
         irq->base.handler = mp_const_none;
         irq->base.ishard = false;
-        MP_STATE_PORT(rp2_pio_irq_obj[PIO_NUM(self->pio)]) = irq;
+        MP_STATE_PORT(rp2_pio_irq_obj[pio_get_index(self->pio)]) = irq;
     }
 
     if (n_args > 1 || kw_args->used != 0) {
@@ -381,6 +399,7 @@ static mp_obj_t rp2_pio_irq(size_t n_args, const mp_obj_t *pos_args, mp_map_t *k
 
         // Enable IRQ if a handler is given.
         if (args[ARG_handler].u_obj != mp_const_none) {
+            rp2_pio_irq_set_exclusive_handler(self->pio, self->irq);
             self->pio->inte0 = irq->trigger;
             irq_set_enabled(self->irq, true);
         }
@@ -426,7 +445,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
 
 static mp_uint_t rp2_pio_irq_trigger(mp_obj_t self_in, mp_uint_t new_trigger) {
     rp2_pio_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    rp2_pio_irq_obj_t *irq = MP_STATE_PORT(rp2_pio_irq_obj[PIO_NUM(self->pio)]);
+    rp2_pio_irq_obj_t *irq = MP_STATE_PORT(rp2_pio_irq_obj[pio_get_index(self->pio)]);
     irq_set_enabled(self->irq, false);
     irq->flags = 0;
     irq->trigger = new_trigger;
@@ -436,7 +455,7 @@ static mp_uint_t rp2_pio_irq_trigger(mp_obj_t self_in, mp_uint_t new_trigger) {
 
 static mp_uint_t rp2_pio_irq_info(mp_obj_t self_in, mp_uint_t info_type) {
     rp2_pio_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    rp2_pio_irq_obj_t *irq = MP_STATE_PORT(rp2_pio_irq_obj[PIO_NUM(self->pio)]);
+    rp2_pio_irq_obj_t *irq = MP_STATE_PORT(rp2_pio_irq_obj[pio_get_index(self->pio)]);
     if (info_type == MP_IRQ_INFO_FLAGS) {
         return irq->flags;
     } else if (info_type == MP_IRQ_INFO_TRIGGERS) {
@@ -537,10 +556,10 @@ static mp_obj_t rp2_state_machine_init_helper(const rp2_state_machine_obj_t *sel
     mp_obj_get_array_fixed_n(args[ARG_prog].u_obj, PROG_MAX_FIELDS, &prog);
 
     // Get and the program offset, and load it into memory if it's not already there.
-    mp_int_t offset = mp_obj_get_int(prog[PROG_OFFSET_PIO0 + PIO_NUM(self->pio)]);
+    mp_int_t offset = mp_obj_get_int(prog[PROG_OFFSET_PIO0 + pio_get_index(self->pio)]);
     if (offset < 0) {
-        rp2_pio_add_program(&rp2_pio_obj[PIO_NUM(self->pio)], args[ARG_prog].u_obj);
-        offset = mp_obj_get_int(prog[PROG_OFFSET_PIO0 + PIO_NUM(self->pio)]);
+        rp2_pio_add_program(&rp2_pio_obj[pio_get_index(self->pio)], args[ARG_prog].u_obj);
+        offset = mp_obj_get_int(prog[PROG_OFFSET_PIO0 + pio_get_index(self->pio)]);
     }
     rp2_state_machine_initial_pc[self->id] = offset;
 
@@ -874,6 +893,7 @@ static mp_obj_t rp2_state_machine_irq(size_t n_args, const mp_obj_t *pos_args, m
         }
 
         if (self->pio->inte0) {
+            rp2_pio_irq_set_exclusive_handler(self->pio, self->irq);
             irq_set_enabled(self->irq, true);
         }
     }
@@ -907,7 +927,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
 
 static mp_uint_t rp2_state_machine_irq_trigger(mp_obj_t self_in, mp_uint_t new_trigger) {
     rp2_state_machine_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    rp2_state_machine_irq_obj_t *irq = MP_STATE_PORT(rp2_state_machine_irq_obj[PIO_NUM(self->pio)]);
+    rp2_state_machine_irq_obj_t *irq = MP_STATE_PORT(rp2_state_machine_irq_obj[pio_get_index(self->pio)]);
     irq_set_enabled(self->irq, false);
     irq->flags = 0;
     irq->trigger = new_trigger;
@@ -917,7 +937,7 @@ static mp_uint_t rp2_state_machine_irq_trigger(mp_obj_t self_in, mp_uint_t new_t
 
 static mp_uint_t rp2_state_machine_irq_info(mp_obj_t self_in, mp_uint_t info_type) {
     rp2_state_machine_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    rp2_state_machine_irq_obj_t *irq = MP_STATE_PORT(rp2_state_machine_irq_obj[PIO_NUM(self->pio)]);
+    rp2_state_machine_irq_obj_t *irq = MP_STATE_PORT(rp2_state_machine_irq_obj[pio_get_index(self->pio)]);
     if (info_type == MP_IRQ_INFO_FLAGS) {
         return irq->flags;
     } else if (info_type == MP_IRQ_INFO_TRIGGERS) {
