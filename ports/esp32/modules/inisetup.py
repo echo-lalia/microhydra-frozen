@@ -54,11 +54,11 @@ MicroHydra is an experimental app switcher for MicroPython, which also provides 
 ### Useful Links
 
 To find various MicroHydra-compatible apps shared by the community, see the apps repo here:  
-github.com/echo-lalia/MicroHydra-Apps
+https://github.com/echo-lalia/MicroHydra-Apps
 
 MicroHydra, and its apps, are built using MicroPython.   
 For information on the modules and features built into MicroPython, see the MicroPython docs:  
-docs.micropython.org/
+https://docs.micropython.org/en/latest/
 
 To learn more about built-in MicroHydra modules, or to learn more about making your own apps, see the wiki:  
 https://github.com/echo-lalia/MicroHydra/wiki
