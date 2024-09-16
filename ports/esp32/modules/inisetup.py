@@ -44,14 +44,31 @@ def setup():
         vfs.VfsFat.mkfs(bdev)
         fs = vfs.VfsFat(bdev)
     vfs.mount(fs, "/")
-    with open("boot.py", "w") as f:
+    with open("readme.md", "w") as f:
         f.write(
             """\
-# This file is executed on every boot (including wake-boot from deepsleep)
-#import esp
-#esp.osdebug(None)
-#import webrepl
-#webrepl.start()
+## Welcome to MicroHydra!
+
+MicroHydra is an experimental app switcher for MicroPython, which also provides some os-like features, and a framework for easily making simple apps.
+
+### Useful Links
+
+To find various MicroHydra-compatible apps shared by the community, see the apps repo here:  
+github.com/echo-lalia/MicroHydra-Apps
+
+MicroHydra, and its apps, are built using MicroPython.   
+For information on the modules and features built into MicroPython, see the MicroPython docs:  
+docs.micropython.org/
+
+To learn more about built-in MicroHydra modules, or to learn more about making your own apps, see the wiki:  
+https://github.com/echo-lalia/MicroHydra/wiki
+
+If you encounter any issues, or have any feature suggestions to share, raise an issue on the GitHub page:  
+https://github.com/echo-lalia/MicroHydra/issues
+
+And finally, if you'd like to talk to other MicroHydra users or developers, MH now has its own Discord:  
+https://discord.gg/6e4KUDpgQC
+
 """
         )
     return fs
